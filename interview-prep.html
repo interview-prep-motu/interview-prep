@@ -121,6 +121,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .sb-group{overflow:hidden;max-height:2000px;transition:max-height 0.3s ease,opacity 0.2s ease;opacity:1}
 .sb-group.collapsed{max-height:0;opacity:0}
 
+/* SOLID diagrams */
+.spc-diag{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:0 0 20px;padding:16px 18px;background:#f9fafb;border-radius:8px;border:1px solid #e5e8eb}
+.spc-diag-side{display:flex;flex-direction:column;gap:6px}
+.spc-diag-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;margin-bottom:2px}
+.spc-dlbl-bad{color:#cf222e}
+.spc-dlbl-good{color:#1a7f37}
+.spc-dbox{border-radius:6px;padding:6px 10px;font-size:11px;font-family:Consolas,monospace;line-height:1.6}
+.spc-dbox-red{background:#fff5f5;border:1.5px solid #ff8182;color:#cf222e}
+.spc-dbox-green{background:#f0fff4;border:1.5px solid #4ac26b;color:#1a7f37}
+.spc-dbox-gray{background:#f6f8fa;border:1.5px solid #d0d7de;color:#57606a}
+.spc-dbox-blue{background:#f0f6ff;border:1.5px solid #b6d4fe;color:#0550ae}
+.spc-darrow{text-align:center;font-size:14px;color:#8c959f;line-height:1.2}
+.spc-dnote{font-size:11px;color:#57606a;margin-top:4px;line-height:1.4}
+.spc-dnote-red{color:#cf222e}
+.spc-dnote-green{color:#1a7f37}
+
 /* scrollbars */
 #sidebar .sb-scroll::-webkit-scrollbar,#content-body::-webkit-scrollbar{width:5px}
 #sidebar .sb-scroll::-webkit-scrollbar-track,#content-body::-webkit-scrollbar-track{background:transparent}
@@ -180,87 +196,167 @@ const solidData = [
   {
     letter:'S', color:'#1a7f37', cls:'sb-s',
     name:'Single Responsibility',
-    tagline:'"One class, one reason to change"',
-    what:'Every class should own exactly one responsibility. If you describe a class using "and" — it handles payments AND sends emails — that\'s a violation. Each concern lives in its own class so a change in one area never breaks another.',
+    tagline:'"One class, one job"',
+    what:'A class should do <strong>one thing only</strong>. If you describe it with "AND" — <em>"ParkingLot allocates spots AND issues tickets AND processes payments"</em> — that\'s a sign to split. When each class owns one job, changing fee logic never accidentally breaks spot logic.',
+    diagram:`
+      <div class="spc-diag">
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-bad">❌ Bad — one class, many jobs</div>
+          <div class="spc-dbox spc-dbox-red">
+            <strong>ParkingLot</strong><br>
+            allocateSpot()<br>
+            generateTicket()<br>
+            processPayment()<br>
+            printReceipt()
+          </div>
+          <div class="spc-dnote spc-dnote-red">Change fee logic → must open this class → risk breaking spot logic</div>
+        </div>
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-good">✓ Good — each class, one job</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div class="spc-dbox spc-dbox-green"><strong>SpotAllocator</strong>  — allocate only</div>
+            <div class="spc-dbox spc-dbox-green"><strong>TicketManager</strong>  — tickets only</div>
+            <div class="spc-dbox spc-dbox-green"><strong>PaymentService</strong> — fees only</div>
+            <div class="spc-dbox spc-dbox-green"><strong>ReceiptPrinter</strong> — receipts only</div>
+          </div>
+          <div class="spc-dnote spc-dnote-green">Change fee logic → only touch PaymentService — nothing else affected</div>
+        </div>
+      </div>`,
     examples:[
       {
         tag:'Parking Lot',
-        badText:'ParkingLot handles spot allocation, ticketing, payment AND receipts. Changing fee logic risks breaking spot logic.',
-        badCode:'class ParkingLot {\n  allocateSpot(v)\n  generateTicket(v)  // ← 4 jobs\n  processPayment(t)\n  printReceipt(t)\n}',
-        goodText:'Each concern is its own class. Changing fee logic only touches PaymentService — SpotAllocator is never opened.',
-        goodCode:'class SpotAllocator   { allocate(v) }\nclass TicketManager   { generate(v, spot) }\nclass PaymentService  { process(ticket) }\nclass ReceiptPrinter  { print(ticket) }'
+        badText:'ParkingLot does 4 things at once. Fixing a bug in payment could accidentally break spot allocation.',
+        badCode:'class ParkingLot {\n  void allocateSpot(Vehicle v) { ... }   // job 1\n  Ticket issueTicket(Vehicle v) { ... }  // job 2\n  void pay(Ticket t) { ... }             // job 3\n  void printReceipt(Ticket t) { ... }    // job 4\n}',
+        goodText:'Four classes, each with one job. Touch PaymentService — SpotAllocator is never affected.',
+        goodCode:'class SpotAllocator  { ParkingSpot allocate(Vehicle v) { ... } }\nclass TicketManager  { Ticket issue(Vehicle v) { ... } }\nclass PaymentService { void pay(Ticket t) { ... } }\nclass ReceiptPrinter { void print(Ticket t) { ... } }'
       },
       {
         tag:'Uber',
-        badText:'Trip class calculates fare, tracks GPS, notifies driver AND saves to DB. Four unrelated reasons to change.',
-        badCode:'class Trip {\n  calculateFare()  // ← 4 jobs\n  trackGPS()\n  notifyDriver()\n  saveToDB()\n}',
-        goodText:'Each job extracted. A GPS provider change only touches LocationTracker. DB schema change only touches TripRepository.',
-        goodCode:'class FareCalculator    { calculate(trip) }\nclass LocationTracker  { getCurrent(driver) }\nclass NotificationSvc  { notifyDriver(d, t) }\nclass TripRepository   { save(trip) }'
+        badText:'Trip class does GPS, fare, notifications, AND database. Four unrelated reasons to change one class.',
+        badCode:'class Trip {\n  double calculateFare() { ... }  // job 1\n  Location trackGPS() { ... }     // job 2\n  void notifyDriver() { ... }     // job 3\n  void saveToDB() { ... }         // job 4\n}',
+        goodText:'Each job extracted. Changing GPS provider only touches LocationTracker — Trip is never opened.',
+        goodCode:'class FareCalculator  { double calculate(Trip t) { ... } }\nclass LocationTracker { Location getCurrent(Driver d) { ... } }\nclass NotificationSvc { void notify(Driver d) { ... } }\nclass TripRepository  { void save(Trip t) { ... } }'
       },
       {
         tag:'Vending Machine',
-        badText:'VendingMachine manages inventory, accepts payment, dispenses items AND logs transactions all in one class.',
-        badCode:'class VendingMachine {\n  manageInventory()  // ← 4 jobs\n  acceptPayment(amt)\n  dispenseItem(code)\n  logTransaction(t)\n}',
-        goodText:'Each responsibility isolated. Adding cloud logging only touches TransactionLogger. Restocking logic only touches InventoryManager.',
-        goodCode:'class InventoryManager  { isAvailable(code) }\nclass PaymentProcessor  { accept(amount) }\nclass Dispenser         { dispense(code) }\nclass TransactionLogger { log(transaction) }'
+        badText:'VendingMachine manages inventory, takes money, dispenses items AND logs — all in one class.',
+        badCode:'class VendingMachine {\n  void manageInventory() { ... }      // job 1\n  void acceptPayment(int amt) { ... } // job 2\n  void dispenseItem(String c) { ... } // job 3\n  void logTransaction(String t) { ... }// job 4\n}',
+        goodText:'Each concern isolated. Adding cloud logging only touches TransactionLogger — nothing else changes.',
+        goodCode:'class InventoryManager  { boolean isAvailable(String c) { ... } }\nclass PaymentProcessor  { boolean accept(int amount) { ... } }\nclass Dispenser         { void dispense(String code) { ... } }\nclass TransactionLogger { void log(String tx) { ... } }'
       },
     ]
   },
   {
     letter:'O', color:'#0550ae', cls:'sb-o',
     name:'Open / Closed',
-    tagline:'"Open for extension, closed for modification"',
-    what:'Once a class is written and tested, adding new behaviour should mean writing a new class — not editing the existing one. The classic smell is an if/else chain you keep cracking open. Fix: define an interface; new variants implement it.',
+    tagline:'"Add new behaviour — never edit old code"',
+    what:'Existing, working code should <strong>never need to be opened</strong> just to add a new feature. The fix: define an interface. Each new variant is a new class that implements it. Your if/else chain stops growing forever.',
+    diagram:`
+      <div class="spc-diag">
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-bad">❌ Bad — keep editing the same method</div>
+          <div class="spc-dbox spc-dbox-red">
+            <strong>getFee(type)</strong><br>
+            if type == "hourly" → ...<br>
+            if type == "daily"  → ...<br>
+            <em>// add EV? edit this file ❌</em>
+          </div>
+          <div class="spc-dnote spc-dnote-red">Every new vehicle type = risky edit to working code</div>
+        </div>
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-good">✓ Good — add a new class each time</div>
+          <div class="spc-dbox spc-dbox-blue" style="margin-bottom:6px"><strong>&lt;&lt;interface&gt;&gt; PricingStrategy</strong><br>calculate(ticket)</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap">
+            <div class="spc-dbox spc-dbox-green">HourlyPricing</div>
+            <div class="spc-dbox spc-dbox-green">DailyPricing</div>
+            <div class="spc-dbox spc-dbox-green" style="border-style:dashed">EVPricing ✦ new</div>
+          </div>
+          <div class="spc-dnote spc-dnote-green">Add EV pricing = new class only. Old classes untouched.</div>
+        </div>
+      </div>`,
     examples:[
       {
         tag:'Parking Lot',
-        badText:'Adding EV charging rate means opening PricingService and adding another else-if — risking bugs in existing hourly/daily logic.',
-        badCode:'double getFee(Ticket t, String type) {\n  if (type == "hourly") ...\n  else if (type == "daily") ...\n  // add EV? edit this ↑\n}',
-        goodText:'EVChargingPricing is a new class. HourlyPricing and DailyPricing are never touched. Adding weekend pricing = one new class.',
-        goodCode:'interface PricingStrategy { double calculate(Ticket t); }\nclass HourlyPricing    implements PricingStrategy {}\nclass DailyPricing     implements PricingStrategy {}\nclass EVChargingPricing implements PricingStrategy {} // new, no edits above'
+        badText:'Adding EV pricing means editing this method — you could accidentally break hourly or daily logic.',
+        badCode:'double getFee(Ticket t, String type) {\n  if (type.equals("hourly")) return t.hours * 20;\n  if (type.equals("daily"))  return 200;\n  // add EV? you must edit here ❌\n}',
+        goodText:'EVPricing is a brand-new class. HourlyPricing and DailyPricing are never touched.',
+        goodCode:'interface PricingStrategy { double calculate(Ticket t); }\n\nclass HourlyPricing implements PricingStrategy {\n  public double calculate(Ticket t) { return t.hours * 20; }\n}\nclass DailyPricing  implements PricingStrategy {\n  public double calculate(Ticket t) { return 200; }\n}\nclass EVPricing     implements PricingStrategy {\n  public double calculate(Ticket t) { return t.hours * 30; } // new ✓\n}'
       },
       {
         tag:'BookMyShow',
-        badText:'Adding BNPL payment means editing PaymentService\'s if/else — every new payment method risks breaking existing ones.',
-        badCode:'void pay(Order o, String method) {\n  if (method == "card") ...\n  else if (method == "upi") ...\n  // add BNPL? edit this ↑\n}',
-        goodText:'BNPLPayment is a new class. PaymentService.pay() accepts a PaymentMethod interface — never needs to change.',
-        goodCode:'interface PaymentMethod { void pay(Order o); }\nclass CreditCardPayment implements PaymentMethod {}\nclass UPIPayment        implements PaymentMethod {}\nclass BNPLPayment       implements PaymentMethod {} // new, no edits above'
+        badText:'Adding BNPL means editing PaymentService\'s if/else — every change risks breaking Card and UPI.',
+        badCode:'void pay(Order o, String method) {\n  if (method.equals("card")) { ... }\n  if (method.equals("upi"))  { ... }\n  // add BNPL? edit here ❌\n}',
+        goodText:'BNPLPayment is a new class. PaymentService takes a PaymentMethod interface — never needs editing.',
+        goodCode:'interface PaymentMethod { boolean pay(Order o); }\n\nclass CardPayment implements PaymentMethod { ... }\nclass UPIPayment  implements PaymentMethod { ... }\nclass BNPLPayment implements PaymentMethod { ... } // new ✓'
       },
       {
         tag:'Splitwise',
-        badText:'Adding "split by income" means opening Splitter and adding another else-if branch — touching logic that already works.',
-        badCode:'Map split(Expense e, String type) {\n  if (type == "equal") ...\n  else if (type == "percent") ...\n  // new type? edit this ↑\n}',
-        goodText:'IncomeSplit is a new class. EqualSplit and PercentageSplit are never modified. The Splitter just calls strategy.split().',
-        goodCode:'interface SplitStrategy { Map<User,Double> split(Expense e); }\nclass EqualSplit      implements SplitStrategy {}\nclass PercentageSplit implements SplitStrategy {}\nclass IncomeSplit     implements SplitStrategy {} // new, no edits above'
+        badText:'Adding "split by income" means cracking open the Splitter method and adding another branch.',
+        badCode:'Map split(Expense e, String type) {\n  if (type.equals("equal"))   { ... }\n  if (type.equals("percent")) { ... }\n  // add income split? edit here ❌\n}',
+        goodText:'IncomeSplit is a new class. EqualSplit and PercentageSplit are never modified.',
+        goodCode:'interface SplitStrategy { Map<User,Double> split(Expense e); }\n\nclass EqualSplit      implements SplitStrategy { ... }\nclass PercentageSplit implements SplitStrategy { ... }\nclass IncomeSplit     implements SplitStrategy { ... } // new ✓'
       },
     ]
   },
   {
     letter:'L', color:'#8250df', cls:'sb-l',
     name:'Liskov Substitution',
-    tagline:'"Subclasses must be substitutable for their parent"',
-    what:'Wherever you use a parent type, a child type must work correctly without the caller knowing the difference. A subclass that throws UnsupportedOperationException for an inherited method is a trap — the caller trusted the parent\'s contract.',
+    tagline:'"Child classes must work wherever the parent works"',
+    what:'If you have a list of <code>Vehicle</code> objects and loop over them — <strong>every subtype must work without crashing</strong>. A child class that throws an exception for an inherited method is a trap. The caller trusted the parent\'s promise.',
+    diagram:`
+      <div class="spc-diag">
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-bad">❌ Bad — child breaks parent\'s promise</div>
+          <div class="spc-dbox spc-dbox-gray" style="margin-bottom:5px">
+            <strong>Vehicle</strong><br>
+            double getParkingFee(hours)
+          </div>
+          <div class="spc-darrow">↓ extends</div>
+          <div class="spc-dbox spc-dbox-red" style="margin-top:5px">
+            <strong>ElectricVehicle</strong><br>
+            getParkingFee() {<br>
+            &nbsp;&nbsp;throw Exception ❌<br>
+            }
+          </div>
+          <div class="spc-dnote spc-dnote-red">Loop crashes whenever it hits an EV</div>
+        </div>
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-good">✓ Good — child honours parent\'s promise</div>
+          <div class="spc-dbox spc-dbox-gray" style="margin-bottom:5px">
+            <strong>Vehicle</strong><br>
+            double getParkingFee(hours)
+          </div>
+          <div class="spc-darrow">↓ extends</div>
+          <div class="spc-dbox spc-dbox-green" style="margin-top:5px">
+            <strong>ElectricVehicle</strong><br>
+            getParkingFee() {<br>
+            &nbsp;&nbsp;return hours * 30 ✓<br>
+            }
+          </div>
+          <div class="spc-dnote spc-dnote-green">Loop works for all vehicle types — no special EV check needed</div>
+        </div>
+      </div>`,
     examples:[
       {
         tag:'Parking Lot',
-        badText:'ElectricVehicle overrides getParkingFee() to throw an exception. Any code iterating vehicles to compute fees now crashes on EVs.',
-        badCode:'class ElectricVehicle extends Vehicle {\n  double getParkingFee(int hours) {\n    throw new UnsupportedOperationException();\n    // ↑ breaks all callers of Vehicle\n  }\n}',
-        goodText:'ElectricVehicle returns parking + charging fee. It honours the contract — any code using Vehicle works with EV seamlessly.',
-        goodCode:'class ElectricVehicle extends Vehicle {\n  double getParkingFee(int hours) {\n    return hours * 20 + hours * 10; // valid fee, no surprise\n  }\n}'
+        badText:'ElectricVehicle throws instead of returning a fee. Any loop over vehicles crashes the moment it hits an EV.',
+        badCode:'class ElectricVehicle extends Vehicle {\n  double getParkingFee(int hours) {\n    throw new RuntimeException("Use charging fee!"); // ❌\n  }\n}\n\n// This loop now crashes on EV:\nfor (Vehicle v : allVehicles) {\n  total += v.getParkingFee(hours); // boom ❌\n}',
+        goodText:'ElectricVehicle returns parking + charging fee — same contract. The loop never needs to know it\'s an EV.',
+        goodCode:'class ElectricVehicle extends Vehicle {\n  double getParkingFee(int hours) {\n    return hours * 30; // parking + charging ✓\n  }\n}\n\n// Works for ALL vehicle types:\nfor (Vehicle v : allVehicles) {\n  total += v.getParkingFee(hours); // always works ✓\n}'
       },
       {
         tag:'BookMyShow',
-        badText:'FreeShow overrides processPayment() to throw because "free shows don\'t need payment." BookingService now crashes on free shows.',
-        badCode:'class FreeShow extends Show {\n  void processPayment(PaymentInfo info) {\n    throw new UnsupportedOperationException();\n    // ↑ BookingService calls this on every show\n  }\n}',
-        goodText:'FreeShow.processPayment() returns true with zero charge. Same contract, no surprise — callers never need a special case for free shows.',
-        goodCode:'class FreeShow extends Show {\n  boolean processPayment(PaymentInfo info) {\n    return true; // zero charge — contract honoured\n  }\n}'
+        badText:'FreeShow throws on processPayment() because "free shows don\'t need payment." BookingService crashes on free shows.',
+        badCode:'class FreeShow extends Show {\n  boolean processPayment(PaymentInfo info) {\n    throw new RuntimeException("Free show!"); // ❌\n  }\n}',
+        goodText:'FreeShow returns true with zero charge. Same contract — BookingService handles it seamlessly.',
+        goodCode:'class FreeShow extends Show {\n  boolean processPayment(PaymentInfo info) {\n    return true; // zero charge — contract honoured ✓\n  }\n}'
       },
       {
         tag:'Uber',
-        badText:'UberPool overrides getSinglePassengerFare() to throw "Pool has no single passenger." Every Ride reference now needs a null-check.',
-        badCode:'class UberPool extends Ride {\n  double getSinglePassengerFare() {\n    throw new UnsupportedOperationException();\n    // ↑ breaks any Ride loop\n  }\n}',
-        goodText:'Rename to getFare() and return per-person share. UberPool is safely substitutable wherever Ride is used.',
-        goodCode:'class UberPool extends Ride {\n  double getFare() {\n    return (base + km * rate) / passengers;\n    // valid, substitutable\n  }\n}'
+        badText:'UberPool throws on getSinglePassengerFare() because pools have multiple riders. Every Ride loop needs a null check.',
+        badCode:'class UberPool extends Ride {\n  double getSinglePassengerFare() {\n    throw new RuntimeException("Pool ride!"); // ❌\n  }\n}',
+        goodText:'Rename to getFare() and return per-person share. UberPool is safely substitutable anywhere Ride is used.',
+        goodCode:'class UberPool extends Ride {\n  double getFare() {\n    return (base + km * rate) / passengers; // valid ✓\n  }\n}'
       },
     ]
   },
@@ -268,57 +364,113 @@ const solidData = [
     letter:'I', color:'#7d4e00', cls:'sb-i',
     name:'Interface Segregation',
     tagline:'"Don\'t force classes to implement what they don\'t use"',
-    what:'A fat interface forces all implementing classes to stub out methods they\'ll never use. Those empty stubs are silent bugs waiting to happen. Split interfaces by role so each class only implements what it actually needs.',
+    what:'A fat interface forces every class to write empty stubs for methods it will never call. Those empty stubs are <strong>silent bugs waiting to happen</strong>. Split interfaces by role — a Rider should only see rider methods, a Driver only driver methods.',
+    diagram:`
+      <div class="spc-diag">
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-bad">❌ Bad — one fat interface, everyone suffers</div>
+          <div class="spc-dbox spc-dbox-red" style="margin-bottom:6px">
+            <strong>IUser</strong><br>
+            requestRide()  ← rider only<br>
+            acceptRide()   ← driver only<br>
+            banUser()      ← admin only
+          </div>
+          <div class="spc-dbox spc-dbox-gray">
+            <strong>Rider</strong> implements IUser<br>
+            acceptRide() { } ← empty stub ❌<br>
+            banUser() { }    ← empty stub ❌
+          </div>
+        </div>
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-good">✓ Good — small focused interfaces</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div class="spc-dbox spc-dbox-blue"><strong>IRider</strong>  — requestRide, cancelRide</div>
+            <div class="spc-dbox spc-dbox-blue"><strong>IDriver</strong> — acceptRide, startTrip</div>
+            <div class="spc-dbox spc-dbox-blue"><strong>IAdmin</strong>  — banUser, viewReports</div>
+          </div>
+          <div class="spc-dbox spc-dbox-green" style="margin-top:6px">
+            <strong>Rider</strong> implements IRider only<br>
+            No stubs. No surprises. ✓
+          </div>
+        </div>
+      </div>`,
     examples:[
       {
         tag:'Uber',
-        badText:'IUser has requestRide(), acceptRide(), and banUser(). Rider is forced to "implement" driver and admin methods with empty bodies.',
-        badCode:'interface IUser {\n  void requestRide();\n  void acceptRide();  // Rider never does this\n  void banUser();     // Rider never does this\n}\nclass Rider implements IUser {\n  void acceptRide() {} // empty stub\n  void banUser()    {} // empty stub\n}',
-        goodText:'Three small interfaces. Rider only implements IRider. Driver only implements IDriver. Neither has dead code.',
-        goodCode:'interface IRider  { void requestRide(); void cancelRide(); }\ninterface IDriver { void acceptRide(); void startTrip(); }\ninterface IAdmin  { void banUser(); void viewReports(); }\nclass Rider  implements IRider  {}\nclass Driver implements IDriver {}'
+        badText:'IUser has rider, driver AND admin methods. Rider is forced to write empty bodies for acceptRide() and banUser().',
+        badCode:'interface IUser {\n  void requestRide();  // rider only\n  void acceptRide();   // driver only — Rider fakes this ❌\n  void banUser();      // admin only  — Rider fakes this ❌\n}\nclass Rider implements IUser {\n  public void acceptRide() {} // empty stub\n  public void banUser()    {} // empty stub\n}',
+        goodText:'Three focused interfaces. Rider only implements IRider — no empty stubs, no dead code.',
+        goodCode:'interface IRider  { void requestRide(); void cancelRide(); }\ninterface IDriver { void acceptRide(); void startTrip(); }\ninterface IAdmin  { void banUser(); }\n\nclass Rider  implements IRider  { ... } // clean ✓\nclass Driver implements IDriver { ... } // clean ✓'
       },
       {
         tag:'BookMyShow',
-        badText:'IBookingService has searchShows(), bookSeats(), manageTheater(), generateReports(). Customer impl leaves admin methods empty.',
-        badCode:'interface IBookingService {\n  List<Show> searchShows(String city);\n  void bookSeats(List<Seat> seats);\n  void manageTheater(Theater t); // admin only\n  void generateReports();        // admin only\n}',
-        goodText:'Split into three focused interfaces. CustomerService never sees admin methods. AdminService never sees booking methods.',
-        goodCode:'interface ISearchService      { List<Show> searchShows(String city); }\ninterface IReservationService { void bookSeats(List<Seat> seats); }\ninterface IAdminService       { void manageTheater(Theater t); }\nclass CustomerService implements ISearchService, IReservationService {}'
+        badText:'IBookingService mixes customer and admin methods. Customer impl has to stub out manageTheater() and generateReports().',
+        badCode:'interface IBookingService {\n  List<Show> searchShows(String city); // customer\n  void bookSeats(List<Seat> seats);    // customer\n  void manageTheater(Theater t);       // admin only ❌\n  void generateReports();              // admin only ❌\n}',
+        goodText:'Three small interfaces. CustomerService only sees user-facing methods. AdminService only sees admin methods.',
+        goodCode:'interface ISearchService  { List<Show> searchShows(String city); }\ninterface IBookingService { void bookSeats(List<Seat> s); }\ninterface IAdminService   { void manageTheater(Theater t); }\n\nclass CustomerService implements ISearchService, IBookingService { ... }'
       },
       {
         tag:'Vending Machine',
-        badText:'IVendingMachine has selectItem(), insertCoin(), restock(), runDiagnostics(). CustomerPanel is forced to expose admin operations.',
-        badCode:'interface IVendingMachine {\n  void selectItem(String code);\n  void insertCoin(double amt);\n  void restock(String code, int qty); // admin only\n  void runDiagnostics();              // admin only\n}',
-        goodText:'CustomerPanel only implements ICustomerActions. Admins use IAdminActions. Users can never accidentally call restock().',
-        goodCode:'interface ICustomerActions { void selectItem(String c); void insertCoin(double a); }\ninterface IAdminActions    { void restock(String c, int q); void runDiagnostics(); }\nclass CustomerPanel implements ICustomerActions {}\nclass AdminPanel    implements IAdminActions {}'
+        badText:'IVendingMachine exposes restock() and runDiagnostics() to customer code that should never see them.',
+        badCode:'interface IVendingMachine {\n  void selectItem(String code);  // customer\n  void insertCoin(double amt);   // customer\n  void restock(String c, int q); // admin only ❌\n  void runDiagnostics();         // admin only ❌\n}',
+        goodText:'CustomerPanel only implements ICustomerActions. Customers can never accidentally call restock().',
+        goodCode:'interface ICustomerActions { void selectItem(String c); void insertCoin(double a); }\ninterface IAdminActions    { void restock(String c, int q); void runDiagnostics(); }\n\nclass CustomerPanel implements ICustomerActions { ... } // clean ✓\nclass AdminPanel    implements IAdminActions    { ... }'
       },
     ]
   },
   {
     letter:'D', color:'#cf222e', cls:'sb-d',
     name:'Dependency Inversion',
-    tagline:'"Depend on abstractions, not concretions"',
-    what:'High-level business logic should not directly create low-level objects with new. That hard-wires the two together — you can\'t swap implementations or write tests. Fix: define an interface, inject the concrete class from outside via constructor.',
+    tagline:'"Depend on interfaces, not concrete classes"',
+    what:'Don\'t create dependencies inside a class with <code>new</code>. That hard-wires the two together — you can never swap implementations or write isolated tests. Instead: <strong>define an interface, inject the concrete class from outside</strong> via the constructor.',
+    diagram:`
+      <div class="spc-diag">
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-bad">❌ Bad — hard-wired with new</div>
+          <div class="spc-dbox spc-dbox-red" style="margin-bottom:5px">
+            <strong>ParkingLot</strong><br>
+            CashPayment p = <strong>new</strong> CashPayment()
+          </div>
+          <div class="spc-darrow">↓ directly creates</div>
+          <div class="spc-dbox spc-dbox-gray" style="margin-top:5px"><strong>CashPayment</strong></div>
+          <div class="spc-dnote spc-dnote-red">Can\'t use UPI. Can\'t test without real cash logic.</div>
+        </div>
+        <div class="spc-diag-side">
+          <div class="spc-diag-lbl spc-dlbl-good">✓ Good — depends on an interface</div>
+          <div class="spc-dbox spc-dbox-green" style="margin-bottom:5px">
+            <strong>ParkingLot</strong><br>
+            IPayment p  <em>← injected ✓</em>
+          </div>
+          <div class="spc-darrow">↓ uses interface</div>
+          <div class="spc-dbox spc-dbox-blue" style="margin:5px 0"><strong>&lt;&lt;interface&gt;&gt; IPayment</strong></div>
+          <div style="display:flex;gap:5px">
+            <div class="spc-dbox spc-dbox-gray">CashPayment</div>
+            <div class="spc-dbox spc-dbox-gray">UPIPayment</div>
+          </div>
+          <div class="spc-dnote spc-dnote-green">Swap payment method without touching ParkingLot.</div>
+        </div>
+      </div>`,
     examples:[
       {
         tag:'Parking Lot',
-        badText:'ParkingLot hard-codes CashPayment with new. It can never accept UPI or Card without editing business logic.',
-        badCode:'class ParkingLot {\n  // hard-wired — can never swap\n  private CashPayment payment = new CashPayment();\n\n  void checkout(Ticket t) {\n    payment.process(t.getFee());\n  }\n}',
-        goodText:'ParkingLot receives IPayment via constructor. Pass CashPayment, CardPayment, or UPI — business logic never changes.',
-        goodCode:'class ParkingLot {\n  private final IPayment payment; // interface\n\n  ParkingLot(IPayment payment) {  // injected\n    this.payment = payment;\n  }\n  void checkout(Ticket t) { payment.process(t.getFee()); }\n}'
+        badText:'ParkingLot hard-codes CashPayment. It can never accept UPI without editing business logic.',
+        badCode:'class ParkingLot {\n  // hard-wired — can never swap ❌\n  private CashPayment pay = new CashPayment();\n\n  void checkout(Ticket t) {\n    pay.process(t.getFee());\n  }\n}',
+        goodText:'ParkingLot receives IPayment via constructor. Pass Cash, UPI, or Card — business logic never changes.',
+        goodCode:'class ParkingLot {\n  private final IPayment pay; // interface ✓\n\n  ParkingLot(IPayment pay) {  // injected from outside\n    this.pay = pay;\n  }\n  void checkout(Ticket t) {\n    pay.process(t.getFee());\n  }\n}'
       },
       {
         tag:'Uber',
-        badText:'TripService creates GoogleMapsTracker directly. Swapping to MapBox or writing a test requires editing TripService.',
-        badCode:'class TripService {\n  // locked to Google Maps forever\n  private GoogleMapsTracker tracker = new GoogleMapsTracker();\n\n  Location getDriverLocation(Driver d) {\n    return tracker.getLocation(d.getId());\n  }\n}',
-        goodText:'TripService receives ILocationTracker via constructor. Inject GoogleMaps in prod, MockTracker in tests — TripService untouched.',
-        goodCode:'class TripService {\n  private final ILocationTracker tracker; // interface\n\n  TripService(ILocationTracker tracker) { // injected\n    this.tracker = tracker;\n  }\n  Location getDriverLocation(Driver d) {\n    return tracker.getLocation(d.getId());\n  }\n}'
+        badText:'TripService creates GoogleMapsTracker directly. Switching to MapBox or writing a unit test requires editing TripService.',
+        badCode:'class TripService {\n  // locked to Google Maps ❌\n  private GoogleMapsTracker tracker = new GoogleMapsTracker();\n\n  Location getLocation(Driver d) {\n    return tracker.getLocation(d.getId());\n  }\n}',
+        goodText:'TripService receives ILocationTracker via constructor. Inject Google in prod, MockTracker in tests.',
+        goodCode:'class TripService {\n  private final ILocationTracker tracker; // interface ✓\n\n  TripService(ILocationTracker tracker) { // injected\n    this.tracker = tracker;\n  }\n  Location getLocation(Driver d) {\n    return tracker.getLocation(d.getId());\n  }\n}'
       },
       {
         tag:'BookMyShow',
-        badText:'BookingService creates MySQLBookingRepo with new. Switching to MongoDB or running tests without a real DB is impossible.',
-        badCode:'class BookingService {\n  // hard-wired to MySQL\n  private MySQLBookingRepo repo = new MySQLBookingRepo();\n\n  void confirm(Booking b) { repo.save(b); }\n}',
-        goodText:'BookingService receives IBookingRepository via constructor. Inject MySQL in prod, InMemory in tests — zero changes to BookingService.',
-        goodCode:'class BookingService {\n  private final IBookingRepository repo; // interface\n\n  BookingService(IBookingRepository repo) { // injected\n    this.repo = repo;\n  }\n  void confirm(Booking b) { repo.save(b); }\n}'
+        badText:'BookingService creates MySQLRepo directly. Can\'t switch to MongoDB or run tests without a real database.',
+        badCode:'class BookingService {\n  // hard-wired to MySQL ❌\n  private MySQLBookingRepo repo = new MySQLBookingRepo();\n\n  void confirm(Booking b) { repo.save(b); }\n}',
+        goodText:'BookingService receives IBookingRepository via constructor. Inject MySQL in prod, InMemory in tests.',
+        goodCode:'class BookingService {\n  private final IBookingRepository repo; // interface ✓\n\n  BookingService(IBookingRepository repo) { // injected\n    this.repo = repo;\n  }\n  void confirm(Booking b) { repo.save(b); }\n}'
       },
     ]
   }
@@ -7528,6 +7680,7 @@ function solidCardHtml(s) {
       </div>
       <div class="spc-body">
         <p class="spc-what">${s.what}</p>
+        ${s.diagram}
         <div class="spc-examples">
           ${s.examples.map(e=>`
             <div class="spc-ex">
