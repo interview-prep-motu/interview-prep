@@ -353,10 +353,10 @@ const solidData = [
       },
       {
         tag:'Uber',
-        badText:'UberPool throws on getSinglePassengerFare() because pools have multiple riders. Every Ride loop needs a null check.',
-        badCode:'class UberPool extends Ride {\n  double getSinglePassengerFare() {\n    throw new RuntimeException("Pool ride!"); // ❌\n  }\n}',
-        goodText:'Rename to getFare() and return per-person share. UberPool is safely substitutable anywhere Ride is used.',
-        goodCode:'class UberPool extends Ride {\n  double getFare() {\n    return (base + km * rate) / passengers; // valid ✓\n  }\n}'
+        badText:'No exception — but UberPool returns the FULL trip fare instead of the per-person share. Every pooler gets silently overcharged. No crash, so the bug hides for days.',
+        badCode:'class UberPool extends Ride {\n  double getFare() {\n    return base + km * rate; // full fare — forgets to split ❌\n  }\n}\n\n// Caller has no idea — looks correct:\nfor (Ride r : allRides) {\n  bill += r.getFare(); // pool riders overcharged silently ❌\n}',
+        goodText:'UberPool divides by passengers. Same contract as Ride.getFare() — caller never needs to know it\'s a pool.',
+        goodCode:'class UberPool extends Ride {\n  double getFare() {\n    return (base + km * rate) / passengers; // per person ✓\n  }\n}\n\n// Works correctly for all ride types:\nfor (Ride r : allRides) {\n  bill += r.getFare(); // always the right amount ✓\n}'
       },
     ]
   },
