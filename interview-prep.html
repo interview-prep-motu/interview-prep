@@ -345,11 +345,11 @@ const solidData = [
         goodCode:'class ElectricVehicle extends Vehicle {\n  double getParkingFee(int hours) {\n    return hours * 30; // parking + charging ✓\n  }\n}\n\n// Works for ALL vehicle types:\nfor (Vehicle v : allVehicles) {\n  total += v.getParkingFee(hours); // always works ✓\n}'
       },
       {
-        tag:'BookMyShow',
-        badText:'FreeShow throws on processPayment() because "free shows don\'t need payment." BookingService crashes on free shows.',
-        badCode:'class FreeShow extends Show {\n  boolean processPayment(PaymentInfo info) {\n    throw new RuntimeException("Free show!"); // ❌\n  }\n}',
-        goodText:'FreeShow returns true with zero charge. Same contract — BookingService handles it seamlessly.',
-        goodCode:'class FreeShow extends Show {\n  boolean processPayment(PaymentInfo info) {\n    return true; // zero charge — contract honoured ✓\n  }\n}'
+        tag:'Bird / Penguin',
+        badText:'Penguin extends Bird but can\'t fly — so it throws. Any loop over birds crashes the moment it hits a Penguin.',
+        badCode:'class Bird {\n  void fly() { System.out.println("Flying!"); }\n}\n\nclass Penguin extends Bird {\n  void fly() {\n    throw new RuntimeException("Penguins can\'t fly!"); // ❌\n  }\n}\n\n// This crashes:\nList<Bird> birds = List.of(new Eagle(), new Penguin());\nfor (Bird b : birds) {\n  b.fly(); // crashes on Penguin ❌\n}',
+        goodText:'Fix: split Bird into Bird (base) and FlyingBird. Penguin extends Bird — honest about what it can do. FlyingBird loop is always safe.',
+        goodCode:'class Bird {\n  void eat()   { ... }  // all birds do this\n  void sleep() { ... }  // all birds do this\n  // no fly() here — not all birds fly!\n}\n\nclass FlyingBird extends Bird {\n  void fly() { ... }    // only flying birds get this\n}\n\nclass Eagle   extends FlyingBird { ... } // ✓\nclass Parrot  extends FlyingBird { ... } // ✓\nclass Penguin extends Bird       { ... } // honest — no fly() ✓\n\n// Safe — only FlyingBirds in this list:\nList<FlyingBird> flyers = List.of(new Eagle(), new Parrot());\nfor (FlyingBird b : flyers) {\n  b.fly(); // always works ✓\n}'
       },
       {
         tag:'Uber',
