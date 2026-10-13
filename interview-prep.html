@@ -225,24 +225,262 @@ const solidData = [
     examples:[
       {
         tag:'Parking Lot',
-        badText:'ParkingLot does 4 things at once. Fixing a bug in payment could accidentally break spot allocation.',
-        badCode:'class ParkingLot {\n  void allocateSpot(Vehicle v) { ... }   // job 1\n  Ticket issueTicket(Vehicle v) { ... }  // job 2\n  void pay(Ticket t) { ... }             // job 3\n  void printReceipt(Ticket t) { ... }    // job 4\n}',
-        goodText:'Four classes, each with one job. Touch PaymentService — SpotAllocator is never affected.',
-        goodCode:'class SpotAllocator  { ParkingSpot allocate(Vehicle v) { ... } }\nclass TicketManager  { Ticket issue(Vehicle v) { ... } }\nclass PaymentService { void pay(Ticket t) { ... } }\nclass ReceiptPrinter { void print(Ticket t) { ... } }'
+        badText:'ParkingLot does 4 unrelated things. A bug fix in payment could accidentally break spot allocation.',
+        badCode:
+`class Vehicle {
+    String plate;
+    Vehicle(String plate) { this.plate = plate; }
+}
+
+class Ticket {
+    String plate;
+    LocalDateTime entryTime;
+    Ticket(String p, LocalDateTime t) { plate = p; entryTime = t; }
+}
+
+// One class doing EVERYTHING — 4 unrelated jobs ❌
+class ParkingLot {
+    List<String> spots = new ArrayList<>();
+
+    // Job 1: spot management
+    public String allocateSpot(Vehicle v) {
+        return spots.isEmpty() ? null : spots.remove(0);
+    }
+    // Job 2: ticketing
+    public Ticket issueTicket(Vehicle v) {
+        return new Ticket(v.plate, LocalDateTime.now());
+    }
+    // Job 3: payment — changing fee means opening this whole class
+    public double pay(Ticket t) {
+        long hrs = ChronoUnit.HOURS.between(t.entryTime, LocalDateTime.now());
+        return hrs * 20.0;
+    }
+    // Job 4: printing
+    public void printReceipt(Ticket t, double amount) {
+        System.out.println("Paid Rs." + amount + " for " + t.plate);
+    }
+}`,
+        goodText:'Four classes, each with one job. Change fee logic in PaymentService — SpotAllocator and TicketManager are never touched.',
+        goodCode:
+`// diagram: Vehicle  →  SpotAllocator
+//          Vehicle  →  TicketManager  →  Ticket
+//          Ticket   →  PaymentService
+//          Ticket   →  ReceiptPrinter
+
+class Vehicle {
+    private String plate;
+    Vehicle(String plate) { this.plate = plate; }
+    String getPlate() { return plate; }
+}
+
+class Ticket {
+    private String plate;
+    private LocalDateTime entryTime;
+    Ticket(String p, LocalDateTime t) { plate = p; entryTime = t; }
+    String getPlate()            { return plate; }
+    LocalDateTime getEntryTime() { return entryTime; }
+}
+
+// Job 1 only: find and hold a spot
+class SpotAllocator {
+    private List<String> spots = new ArrayList<>();
+    SpotAllocator(List<String> spots) { this.spots = spots; }
+    public String allocate(Vehicle v) {
+        if (spots.isEmpty()) throw new RuntimeException("Lot is full");
+        return spots.remove(0);
+    }
+    public void release(String spot) { spots.add(spot); }
+}
+
+// Job 2 only: issue a ticket
+class TicketManager {
+    public Ticket issue(Vehicle v) {
+        return new Ticket(v.getPlate(), LocalDateTime.now());
+    }
+}
+
+// Job 3 only: calculate and collect fee
+class PaymentService {
+    public double pay(Ticket t) {
+        long hrs = ChronoUnit.HOURS.between(t.getEntryTime(), LocalDateTime.now());
+        return hrs * 20.0;
+    }
+}
+
+// Job 4 only: print receipt
+class ReceiptPrinter {
+    public void print(Ticket t, double amount) {
+        System.out.println("Receipt: " + t.getPlate() + " | Rs." + amount);
+    }
+}`
       },
       {
         tag:'Uber',
-        badText:'Trip class does GPS, fare, notifications, AND database. Four unrelated reasons to change one class.',
-        badCode:'class Trip {\n  double calculateFare() { ... }  // job 1\n  Location trackGPS() { ... }     // job 2\n  void notifyDriver() { ... }     // job 3\n  void saveToDB() { ... }         // job 4\n}',
-        goodText:'Each job extracted. Changing GPS provider only touches LocationTracker — Trip is never opened.',
-        goodCode:'class FareCalculator  { double calculate(Trip t) { ... } }\nclass LocationTracker { Location getCurrent(Driver d) { ... } }\nclass NotificationSvc { void notify(Driver d) { ... } }\nclass TripRepository  { void save(Trip t) { ... } }'
+        badText:'Trip class calculates fare, tracks GPS, sends notifications AND saves to DB. Four unrelated reasons to change one class.',
+        badCode:
+`class Driver {
+    String phone;
+    Driver(String phone) { this.phone = phone; }
+}
+
+class User {
+    String name;
+    User(String name) { this.name = name; }
+}
+
+// Trip doing 4 unrelated jobs ❌
+class Trip {
+    User rider;
+    Driver driver;
+    double distanceKm;
+    String id;
+
+    Trip(User r, Driver d, double km) {
+        id = UUID.randomUUID().toString();
+        rider = r; driver = d; distanceKm = km;
+    }
+
+    // Job 1: fare
+    public double calculateFare() { return 50 + 12 * distanceKm; }
+
+    // Job 2: GPS
+    public String trackGPS() { return "lat:12.97,lng:77.59"; }
+
+    // Job 3: notifications
+    public void notifyDriver() {
+        System.out.println("SMS to " + driver.phone + ": ride ready");
+    }
+
+    // Job 4: persistence
+    public void saveToDB() {
+        System.out.println("Saving trip " + id + " to database");
+    }
+}`,
+        goodText:'Each job extracted into its own class. Changing GPS provider only touches LocationTracker — Trip, FareCalculator, and TripRepository are never opened.',
+        goodCode:
+`// diagram: Trip  →  FareCalculator
+//          Driver →  LocationTracker
+//          Driver →  NotificationService
+//          Trip   →  TripRepository
+
+class Driver {
+    private String id, phone;
+    Driver(String id, String phone) { this.id = id; this.phone = phone; }
+    String getId()    { return id; }
+    String getPhone() { return phone; }
+}
+
+// Trip is just a data holder now
+class Trip {
+    private String id;
+    private double distanceKm;
+    private Driver driver;
+    Trip(Driver d, double km) {
+        id = UUID.randomUUID().toString();
+        driver = d; distanceKm = km;
+    }
+    String getId()           { return id; }
+    double getDistanceKm()   { return distanceKm; }
+    Driver getDriver()       { return driver; }
+}
+
+// Job 1 only: calculate fare
+class FareCalculator {
+    public double calculate(Trip t) { return 50 + 12 * t.getDistanceKm(); }
+}
+
+// Job 2 only: track location
+class LocationTracker {
+    public String getCurrent(Driver d) {
+        return "lat:12.97,lng:77.59"; // calls GPS API
+    }
+}
+
+// Job 3 only: send messages
+class NotificationService {
+    public void notify(Driver d, String msg) {
+        System.out.println("SMS to " + d.getPhone() + ": " + msg);
+    }
+}
+
+// Job 4 only: persist trips
+class TripRepository {
+    private List<Trip> db = new ArrayList<>();
+    public void save(Trip t) { db.add(t); }
+    public Optional<Trip> find(String id) {
+        return db.stream().filter(t -> t.getId().equals(id)).findFirst();
+    }
+}`
       },
       {
         tag:'Vending Machine',
-        badText:'VendingMachine manages inventory, takes money, dispenses items AND logs — all in one class.',
-        badCode:'class VendingMachine {\n  void manageInventory() { ... }      // job 1\n  void acceptPayment(int amt) { ... } // job 2\n  void dispenseItem(String c) { ... } // job 3\n  void logTransaction(String t) { ... }// job 4\n}',
-        goodText:'Each concern isolated. Adding cloud logging only touches TransactionLogger — nothing else changes.',
-        goodCode:'class InventoryManager  { boolean isAvailable(String c) { ... } }\nclass PaymentProcessor  { boolean accept(int amount) { ... } }\nclass Dispenser         { void dispense(String code) { ... } }\nclass TransactionLogger { void log(String tx) { ... } }'
+        badText:'VendingMachine manages stock, takes money, dispenses items AND logs — all crammed into one class.',
+        badCode:
+`// All 4 jobs in one class ❌
+class VendingMachine {
+    private Map<String, Integer> stock = new HashMap<>();
+    private double insertedCoins = 0;
+
+    // Job 1: inventory check
+    public boolean manageInventory(String code) {
+        return stock.getOrDefault(code, 0) > 0;
+    }
+    // Job 2: collect coins
+    public void acceptPayment(double amount) {
+        insertedCoins += amount;
+    }
+    // Job 3: dispense
+    public void dispenseItem(String code) {
+        stock.merge(code, -1, Integer::sum);
+        System.out.println("Dispensing: " + code);
+    }
+    // Job 4: log — want to add cloud logging? open this whole class
+    public void logTransaction(String code, double amount) {
+        System.out.println("LOG: " + code + " sold for Rs." + amount);
+    }
+}`,
+        goodText:'Adding cloud logging only touches TransactionLogger. Restocking logic only touches InventoryManager. Nothing else changes.',
+        goodCode:
+`// diagram: InventoryManager  (stock)
+//          PaymentProcessor   (coins)
+//          Dispenser          (motor)
+//          TransactionLogger  (log)
+
+// Job 1 only: track stock
+class InventoryManager {
+    private Map<String, Integer> stock = new HashMap<>();
+
+    public boolean isAvailable(String code) {
+        return stock.getOrDefault(code, 0) > 0;
+    }
+    public void deduct(String code) { stock.merge(code, -1, Integer::sum); }
+    public void restock(String code, int qty) { stock.merge(code, qty, Integer::sum); }
+}
+
+// Job 2 only: handle coins
+class PaymentProcessor {
+    private double balance = 0;
+
+    public void insert(double coins) { balance += coins; }
+    public boolean hasFunds(double price) { return balance >= price; }
+    public double getChange(double price) { return balance - price; }
+    public void reset() { balance = 0; }
+}
+
+// Job 3 only: dispense item
+class Dispenser {
+    public void dispense(String code) {
+        System.out.println("Dispensed: " + code);
+    }
+}
+
+// Job 4 only: log transaction — swap to cloud logging here only
+class TransactionLogger {
+    public void log(String code, double amount) {
+        System.out.println("LOG: " + code + " | Rs." + amount
+            + " | " + LocalDateTime.now());
+    }
+}`
       },
     ]
   },
@@ -278,23 +516,236 @@ const solidData = [
       {
         tag:'Parking Lot',
         badText:'Adding EV pricing means editing this method — you could accidentally break hourly or daily logic.',
-        badCode:'double getFee(Ticket t, String type) {\n  if (type.equals("hourly")) return t.hours * 20;\n  if (type.equals("daily"))  return 200;\n  // add EV? you must edit here ❌\n}',
-        goodText:'EVPricing is a brand-new class. HourlyPricing and DailyPricing are never touched.',
-        goodCode:'interface PricingStrategy { double calculate(Ticket t); }\n\nclass HourlyPricing implements PricingStrategy {\n  public double calculate(Ticket t) { return t.hours * 20; }\n}\nclass DailyPricing  implements PricingStrategy {\n  public double calculate(Ticket t) { return 200; }\n}\nclass EVPricing     implements PricingStrategy {\n  public double calculate(Ticket t) { return t.hours * 30; } // new ✓\n}'
+        badCode:
+`class Ticket {
+    int hours;
+    String vehicleType;
+    Ticket(int hours, String type) { this.hours = hours; vehicleType = type; }
+}
+
+class PricingService {
+    // Every new type = edit this method ❌
+    public double getFee(Ticket t) {
+        if (t.vehicleType.equals("hourly"))  return t.hours * 20;
+        if (t.vehicleType.equals("daily"))   return 200;
+        if (t.vehicleType.equals("monthly")) return 3000;
+        // add EV? open this file again...
+        return 0;
+    }
+}`,
+        goodText:'EVPricing is a brand-new class. HourlyPricing, DailyPricing, and MonthlyPricing are never touched. PaymentService never changes.',
+        goodCode:
+`// diagram: PaymentService → PricingStrategy (interface)
+//                              ↑ HourlyPricing
+//                              ↑ DailyPricing
+//                              ↑ MonthlyPricing
+//                              ↑ EVPricing  ← new class, nothing else changed
+
+class Ticket {
+    private int hours;
+    Ticket(int hours) { this.hours = hours; }
+    int getHours() { return hours; }
+}
+
+// Define the contract once — never change this
+interface PricingStrategy {
+    double calculate(Ticket t);
+}
+
+class HourlyPricing implements PricingStrategy {
+    public double calculate(Ticket t) { return t.getHours() * 20; }
+}
+
+class DailyPricing implements PricingStrategy {
+    public double calculate(Ticket t) { return 200; }
+}
+
+class MonthlyPricing implements PricingStrategy {
+    public double calculate(Ticket t) { return 3000; }
+}
+
+// New type added — all above classes untouched ✓
+class EVPricing implements PricingStrategy {
+    public double calculate(Ticket t) { return t.getHours() * 30; }
+}
+
+// This class never needs to change
+class PaymentService {
+    private final PricingStrategy strategy;
+    PaymentService(PricingStrategy strategy) { this.strategy = strategy; }
+    public double checkout(Ticket t) { return strategy.calculate(t); }
+}
+
+// Usage:
+// new PaymentService(new HourlyPricing()).checkout(ticket);
+// new PaymentService(new EVPricing()).checkout(ticket);`
       },
       {
         tag:'BookMyShow',
         badText:'Adding BNPL means editing PaymentService\'s if/else — every change risks breaking Card and UPI.',
-        badCode:'void pay(Order o, String method) {\n  if (method.equals("card")) { ... }\n  if (method.equals("upi"))  { ... }\n  // add BNPL? edit here ❌\n}',
-        goodText:'BNPLPayment is a new class. PaymentService takes a PaymentMethod interface — never needs editing.',
-        goodCode:'interface PaymentMethod { boolean pay(Order o); }\n\nclass CardPayment implements PaymentMethod { ... }\nclass UPIPayment  implements PaymentMethod { ... }\nclass BNPLPayment implements PaymentMethod { ... } // new ✓'
+        badCode:
+`class Order {
+    double amount;
+    String userId;
+    Order(double amount, String userId) { this.amount = amount; this.userId = userId; }
+}
+
+class PaymentService {
+    // Every new payment type = edit this method ❌
+    public boolean pay(Order o, String method) {
+        if (method.equals("card")) {
+            System.out.println("Card charged: Rs." + o.amount);
+            return true;
+        }
+        if (method.equals("upi")) {
+            System.out.println("UPI transfer: Rs." + o.amount);
+            return true;
+        }
+        // add BNPL? open this file again...
+        return false;
+    }
+}`,
+        goodText:'BNPLPayment is a new class. BookingService takes a PaymentMethod interface — it never changes no matter how many payment types you add.',
+        goodCode:
+`// diagram: BookingService → PaymentMethod (interface)
+//                               ↑ CardPayment
+//                               ↑ UPIPayment
+//                               ↑ BNPLPayment  ← new class, nothing else changed
+
+class Order {
+    private double amount;
+    private String userId;
+    Order(double amount, String userId) { this.amount = amount; this.userId = userId; }
+    double getAmount() { return amount; }
+    String getUserId() { return userId; }
+}
+
+interface PaymentMethod {
+    boolean pay(Order o);
+    String getType();
+}
+
+class CardPayment implements PaymentMethod {
+    public boolean pay(Order o) {
+        System.out.println("Card charged: Rs." + o.getAmount());
+        return true;
+    }
+    public String getType() { return "CARD"; }
+}
+
+class UPIPayment implements PaymentMethod {
+    private String upiId;
+    UPIPayment(String upiId) { this.upiId = upiId; }
+    public boolean pay(Order o) {
+        System.out.println("UPI " + upiId + ": Rs." + o.getAmount());
+        return true;
+    }
+    public String getType() { return "UPI"; }
+}
+
+// New type — CardPayment and UPIPayment untouched ✓
+class BNPLPayment implements PaymentMethod {
+    public boolean pay(Order o) {
+        System.out.println("BNPL deferred: Rs." + o.getAmount());
+        return true;
+    }
+    public String getType() { return "BNPL"; }
+}
+
+// Never changes regardless of how many payment types are added
+class BookingService {
+    public boolean book(Order o, PaymentMethod payment) {
+        return payment.pay(o);
+    }
+}
+
+// Usage:
+// new BookingService().book(order, new UPIPayment("abc@upi"));
+// new BookingService().book(order, new BNPLPayment());`
       },
       {
         tag:'Splitwise',
         badText:'Adding "split by income" means cracking open the Splitter method and adding another branch.',
-        badCode:'Map split(Expense e, String type) {\n  if (type.equals("equal"))   { ... }\n  if (type.equals("percent")) { ... }\n  // add income split? edit here ❌\n}',
-        goodText:'IncomeSplit is a new class. EqualSplit and PercentageSplit are never modified.',
-        goodCode:'interface SplitStrategy { Map<User,Double> split(Expense e); }\n\nclass EqualSplit      implements SplitStrategy { ... }\nclass PercentageSplit implements SplitStrategy { ... }\nclass IncomeSplit     implements SplitStrategy { ... } // new ✓'
+        badCode:
+`class User {
+    String name;
+    User(String name) { this.name = name; }
+}
+
+class Splitter {
+    // Every new split type = edit this method ❌
+    public Map<User, Double> split(double amount, List<User> members, String type) {
+        Map<User, Double> result = new HashMap<>();
+        if (type.equals("equal")) {
+            double share = amount / members.size();
+            members.forEach(u -> result.put(u, share));
+        } else if (type.equals("percent")) {
+            // hardcoded percentages...
+        }
+        // add income split? open this file again...
+        return result;
+    }
+}`,
+        goodText:'IncomeSplit is a new class. EqualSplit and PercentageSplit are never modified. Expense holds a SplitStrategy — works with any future strategy.',
+        goodCode:
+`// diagram: Expense → SplitStrategy (interface)
+//                        ↑ EqualSplit
+//                        ↑ PercentageSplit
+//                        ↑ IncomeSplit  ← new class, nothing else changed
+
+class User {
+    private String name;
+    User(String name) { this.name = name; }
+    String getName() { return name; }
+}
+
+class Expense {
+    private double amount;
+    private User payer;
+    private SplitStrategy strategy;
+    Expense(double amount, User payer, SplitStrategy strategy) {
+        this.amount = amount; this.payer = payer; this.strategy = strategy;
+    }
+    Map<User, Double> getShares(List<User> members) {
+        return strategy.split(amount, members);
+    }
+    User getPayer() { return payer; }
+}
+
+interface SplitStrategy {
+    Map<User, Double> split(double amount, List<User> members);
+}
+
+class EqualSplit implements SplitStrategy {
+    public Map<User, Double> split(double amount, List<User> members) {
+        double share = amount / members.size();
+        Map<User, Double> result = new HashMap<>();
+        members.forEach(u -> result.put(u, share));
+        return result;
+    }
+}
+
+class PercentageSplit implements SplitStrategy {
+    private Map<User, Double> percentages; // e.g. {Alice: 60.0, Bob: 40.0}
+    PercentageSplit(Map<User, Double> p) { percentages = p; }
+    public Map<User, Double> split(double amount, List<User> members) {
+        Map<User, Double> result = new HashMap<>();
+        members.forEach(u -> result.put(u, amount * percentages.get(u) / 100));
+        return result;
+    }
+}
+
+// New type — EqualSplit and PercentageSplit untouched ✓
+class IncomeSplit implements SplitStrategy {
+    private Map<User, Double> incomes;
+    IncomeSplit(Map<User, Double> incomes) { this.incomes = incomes; }
+    public Map<User, Double> split(double amount, List<User> members) {
+        double total = incomes.values().stream().mapToDouble(Double::doubleValue).sum();
+        Map<User, Double> result = new HashMap<>();
+        members.forEach(u -> result.put(u, amount * incomes.get(u) / total));
+        return result;
+    }
+}`
       },
     ]
   },
@@ -306,7 +757,7 @@ const solidData = [
     diagram:`
       <div class="spc-diag">
         <div class="spc-diag-side">
-          <div class="spc-diag-lbl spc-dlbl-bad">❌ Bad — child breaks parent\'s promise</div>
+          <div class="spc-diag-lbl spc-dlbl-bad">❌ Bad — child breaks parent's promise</div>
           <div class="spc-dbox spc-dbox-gray" style="margin-bottom:5px">
             <strong>Vehicle</strong><br>
             double getParkingFee(hours)
@@ -321,7 +772,7 @@ const solidData = [
           <div class="spc-dnote spc-dnote-red">Loop crashes whenever it hits an EV</div>
         </div>
         <div class="spc-diag-side">
-          <div class="spc-diag-lbl spc-dlbl-good">✓ Good — child honours parent\'s promise</div>
+          <div class="spc-diag-lbl spc-dlbl-good">✓ Good — child honours parent's promise</div>
           <div class="spc-dbox spc-dbox-gray" style="margin-bottom:5px">
             <strong>Vehicle</strong><br>
             double getParkingFee(hours)
@@ -340,23 +791,227 @@ const solidData = [
       {
         tag:'Parking Lot',
         badText:'ElectricVehicle throws instead of returning a fee. Any loop over vehicles crashes the moment it hits an EV.',
-        badCode:'class ElectricVehicle extends Vehicle {\n  double getParkingFee(int hours) {\n    throw new RuntimeException("Use charging fee!"); // ❌\n  }\n}\n\n// This loop now crashes on EV:\nfor (Vehicle v : allVehicles) {\n  total += v.getParkingFee(hours); // boom ❌\n}',
-        goodText:'ElectricVehicle returns parking + charging fee — same contract. The loop never needs to know it\'s an EV.',
-        goodCode:'class ElectricVehicle extends Vehicle {\n  double getParkingFee(int hours) {\n    return hours * 30; // parking + charging ✓\n  }\n}\n\n// Works for ALL vehicle types:\nfor (Vehicle v : allVehicles) {\n  total += v.getParkingFee(hours); // always works ✓\n}'
+        badCode:
+`abstract class Vehicle {
+    protected String plate;
+    Vehicle(String plate) { this.plate = plate; }
+    abstract double getParkingFee(int hours);
+    String getPlate() { return plate; }
+}
+
+class Car extends Vehicle {
+    Car(String plate) { super(plate); }
+    public double getParkingFee(int hours) { return hours * 20; }
+}
+
+// Breaks every caller of Vehicle ❌
+class ElectricVehicle extends Vehicle {
+    ElectricVehicle(String plate) { super(plate); }
+    public double getParkingFee(int hours) {
+        throw new RuntimeException("EV uses charging rate, not parking fee!");
+    }
+}
+
+// This loop crashes on EV:
+List<Vehicle> allVehicles = List.of(new Car("KA01"), new ElectricVehicle("KA02"));
+double total = 0;
+for (Vehicle v : allVehicles) {
+    total += v.getParkingFee(3); // ❌ RuntimeException when v = ElectricVehicle
+}`,
+        goodText:'ElectricVehicle returns parking + charging fee. Same contract — the loop never needs to know it\'s an EV.',
+        goodCode:
+`// diagram: Vehicle (abstract)
+//            ↑ Car              getParkingFee = hours * 20
+//            ↑ Truck            getParkingFee = hours * 40
+//            ↑ ElectricVehicle  getParkingFee = hours * 30  (parking + charging)
+
+abstract class Vehicle {
+    protected String plate;
+    Vehicle(String plate) { this.plate = plate; }
+    abstract double getParkingFee(int hours); // contract: return a valid fee
+    String getPlate() { return plate; }
+}
+
+class Car extends Vehicle {
+    Car(String plate) { super(plate); }
+    public double getParkingFee(int hours) { return hours * 20; }
+}
+
+class Truck extends Vehicle {
+    Truck(String plate) { super(plate); }
+    public double getParkingFee(int hours) { return hours * 40; }
+}
+
+// Honours the contract — returns parking + charging fee ✓
+class ElectricVehicle extends Vehicle {
+    ElectricVehicle(String plate) { super(plate); }
+    public double getParkingFee(int hours) {
+        return hours * 20 + hours * 10; // parking + charging — a valid number ✓
+    }
+}
+
+// Works for ALL vehicle types with zero special cases:
+List<Vehicle> allVehicles = List.of(
+    new Car("KA01"), new Truck("KA02"), new ElectricVehicle("KA03")
+);
+double total = 0;
+for (Vehicle v : allVehicles) {
+    total += v.getParkingFee(3); // ✓ always works
+}
+System.out.println("Total: Rs." + total); // Rs.270`
       },
       {
         tag:'Bird / Penguin',
         badText:'Penguin extends Bird but can\'t fly — so it throws. Any loop over birds crashes the moment it hits a Penguin.',
-        badCode:'class Bird {\n  void fly() { System.out.println("Flying!"); }\n}\n\nclass Penguin extends Bird {\n  void fly() {\n    throw new RuntimeException("Penguins can\'t fly!"); // ❌\n  }\n}\n\n// This crashes:\nList<Bird> birds = List.of(new Eagle(), new Penguin());\nfor (Bird b : birds) {\n  b.fly(); // crashes on Penguin ❌\n}',
-        goodText:'Fix: split Bird into Bird (base) and FlyingBird. Penguin extends Bird — honest about what it can do. FlyingBird loop is always safe.',
-        goodCode:'class Bird {\n  void eat()   { ... }  // all birds do this\n  void sleep() { ... }  // all birds do this\n  // no fly() here — not all birds fly!\n}\n\nclass FlyingBird extends Bird {\n  void fly() { ... }    // only flying birds get this\n}\n\nclass Eagle   extends FlyingBird { ... } // ✓\nclass Parrot  extends FlyingBird { ... } // ✓\nclass Penguin extends Bird       { ... } // honest — no fly() ✓\n\n// Safe — only FlyingBirds in this list:\nList<FlyingBird> flyers = List.of(new Eagle(), new Parrot());\nfor (FlyingBird b : flyers) {\n  b.fly(); // always works ✓\n}'
+        badCode:
+`class Bird {
+    String name;
+    Bird(String name) { this.name = name; }
+    void eat()  { System.out.println(name + " is eating"); }
+    void fly()  { System.out.println(name + " is flying"); }
+}
+
+class Eagle extends Bird {
+    Eagle() { super("Eagle"); }
+    // fly() works fine — no override needed
+}
+
+// Penguin CANNOT fly — breaks the contract ❌
+class Penguin extends Bird {
+    Penguin() { super("Penguin"); }
+    public void fly() {
+        throw new RuntimeException("Penguins can't fly!"); // ❌
+    }
+}
+
+// This loop crashes on Penguin:
+List<Bird> birds = List.of(new Eagle(), new Penguin());
+for (Bird b : birds) {
+    b.fly(); // ❌ RuntimeException when b = Penguin
+}`,
+        goodText:'Fix: introduce FlyingBird between Bird and Eagle. Penguin extends Bird directly — honest about what it can do. The FlyingBird loop is always safe.',
+        goodCode:
+`// diagram: Bird (base — eat, sleep)
+//            ↑ FlyingBird (adds fly())
+//                ↑ Eagle
+//                ↑ Parrot
+//                ↑ Sparrow
+//            ↑ Penguin (no fly() — honest ✓)
+
+// Base — only what ALL birds can do
+class Bird {
+    protected String name;
+    Bird(String name) { this.name = name; }
+    void eat()   { System.out.println(name + " is eating"); }
+    void sleep() { System.out.println(name + " is sleeping"); }
+}
+
+// Only birds that CAN fly extend this
+class FlyingBird extends Bird {
+    FlyingBird(String name) { super(name); }
+    void fly() { System.out.println(name + " is flying"); }
+}
+
+class Eagle   extends FlyingBird { Eagle()   { super("Eagle"); } }
+class Parrot  extends FlyingBird { Parrot()  { super("Parrot"); } }
+class Sparrow extends FlyingBird { Sparrow() { super("Sparrow"); } }
+
+// Penguin is honest — it's a Bird, not a FlyingBird ✓
+class Penguin extends Bird {
+    Penguin() { super("Penguin"); }
+    void swim() { System.out.println("Penguin is swimming"); }
+}
+
+// Loop over FlyingBirds — always safe ✓
+List<FlyingBird> flyers = List.of(new Eagle(), new Parrot(), new Sparrow());
+for (FlyingBird b : flyers) {
+    b.fly(); // ✓ always works — no Penguin can sneak in
+}
+
+// Penguin still works perfectly as a Bird:
+Penguin p = new Penguin();
+p.eat();  // ✓ Penguin is eating
+p.swim(); // ✓ Penguin is swimming`
       },
       {
         tag:'Uber',
-        badText:'No exception — but UberPool returns the FULL trip fare instead of the per-person share. Every pooler gets silently overcharged. No crash, so the bug hides for days.',
-        badCode:'class UberPool extends Ride {\n  double getFare() {\n    return base + km * rate; // full fare — forgets to split ❌\n  }\n}\n\n// Caller has no idea — looks correct:\nfor (Ride r : allRides) {\n  bill += r.getFare(); // pool riders overcharged silently ❌\n}',
-        goodText:'UberPool divides by passengers. Same contract as Ride.getFare() — caller never needs to know it\'s a pool.',
-        goodCode:'class UberPool extends Ride {\n  double getFare() {\n    return (base + km * rate) / passengers; // per person ✓\n  }\n}\n\n// Works correctly for all ride types:\nfor (Ride r : allRides) {\n  bill += r.getFare(); // always the right amount ✓\n}'
+        badText:'No exception — but UberPool returns the FULL trip fare instead of per person. Every pooler gets silently overcharged. No crash, so the bug hides for days.',
+        badCode:
+`abstract class Ride {
+    protected double base = 50;
+    protected double ratePerKm = 12;
+    protected double distanceKm;
+    Ride(double km) { this.distanceKm = km; }
+    abstract double getFare(); // contract: return fare per person
+}
+
+class UberGo extends Ride {
+    UberGo(double km) { super(km); }
+    public double getFare() { return base + ratePerKm * distanceKm; } // 1 person
+}
+
+// Silently returns TOTAL fare — forgets to divide ❌
+class UberPool extends Ride {
+    private int passengers;
+    UberPool(double km, int passengers) { super(km); this.passengers = passengers; }
+    public double getFare() {
+        return base + ratePerKm * distanceKm; // forgot / passengers ❌
+    }
+}
+
+// Caller has no idea each pooler is being overcharged:
+List<Ride> rides = List.of(new UberGo(10), new UberPool(10, 3));
+for (Ride r : rides) {
+    System.out.println("Fare: Rs." + r.getFare());
+    // UberGo:   Rs.170  ✓
+    // UberPool: Rs.170  ❌  (should be Rs.56.67 per person)
+}`,
+        goodText:'UberPool divides by passengers — correct per-person fare. Same contract as Ride.getFare(). The caller works correctly for all ride types.',
+        goodCode:
+`// diagram: Ride (abstract — getFare per person)
+//            ↑ UberGo       getFare = 50 + 12*km
+//            ↑ UberPremium  getFare = (50 + 12*km) * 1.5
+//            ↑ UberPool     getFare = (50 + 12*km) / passengers  ✓
+
+abstract class Ride {
+    protected double base = 50;
+    protected double ratePerKm = 12;
+    protected double distanceKm;
+    Ride(double km) { this.distanceKm = km; }
+    abstract double getFare(); // contract: return fare PER PERSON
+}
+
+class UberGo extends Ride {
+    UberGo(double km) { super(km); }
+    public double getFare() {
+        return base + ratePerKm * distanceKm; // solo rider
+    }
+}
+
+class UberPremium extends Ride {
+    UberPremium(double km) { super(km); }
+    public double getFare() {
+        return (base + ratePerKm * distanceKm) * 1.5;
+    }
+}
+
+// Correctly returns per-person share ✓
+class UberPool extends Ride {
+    private int passengers;
+    UberPool(double km, int passengers) { super(km); this.passengers = passengers; }
+    public double getFare() {
+        return (base + ratePerKm * distanceKm) / passengers; // per person ✓
+    }
+}
+
+// Works correctly for ALL ride types:
+List<Ride> rides = List.of(new UberGo(10), new UberPremium(10), new UberPool(10, 3));
+for (Ride r : rides) {
+    System.out.println("Fare: Rs." + String.format("%.2f", r.getFare()));
+    // UberGo:      Rs.170.00 ✓
+    // UberPremium: Rs.255.00 ✓
+    // UberPool:    Rs.56.67  ✓  (per person)
+}`
       },
     ]
   },
@@ -398,23 +1053,203 @@ const solidData = [
       {
         tag:'Uber',
         badText:'IUser has rider, driver AND admin methods. Rider is forced to write empty bodies for acceptRide() and banUser().',
-        badCode:'interface IUser {\n  void requestRide();  // rider only\n  void acceptRide();   // driver only — Rider fakes this ❌\n  void banUser();      // admin only  — Rider fakes this ❌\n}\nclass Rider implements IUser {\n  public void acceptRide() {} // empty stub\n  public void banUser()    {} // empty stub\n}',
-        goodText:'Three focused interfaces. Rider only implements IRider — no empty stubs, no dead code.',
-        goodCode:'interface IRider  { void requestRide(); void cancelRide(); }\ninterface IDriver { void acceptRide(); void startTrip(); }\ninterface IAdmin  { void banUser(); }\n\nclass Rider  implements IRider  { ... } // clean ✓\nclass Driver implements IDriver { ... } // clean ✓'
+        badCode:
+`// Fat interface — every role is forced to implement everything ❌
+interface IUser {
+    void requestRide();           // rider only
+    void cancelRide();            // rider only
+    void acceptRide();            // driver only ← Rider fakes this
+    void startTrip();             // driver only ← Rider fakes this
+    void banUser(String userId);  // admin only  ← Rider fakes this
+    void viewReports();           // admin only  ← Rider fakes this
+}
+
+// Rider forced to stub 4 methods it will never use
+class Rider implements IUser {
+    public void requestRide() { System.out.println("Ride requested"); }
+    public void cancelRide()  { System.out.println("Ride cancelled"); }
+    public void acceptRide()  { } // empty stub — useless ❌
+    public void startTrip()   { } // empty stub — useless ❌
+    public void banUser(String u) { } // empty stub ❌
+    public void viewReports()     { } // empty stub ❌
+}`,
+        goodText:'Three focused interfaces. Rider only implements IRider — no empty stubs. Driver only implements IDriver. Neither has dead code.',
+        goodCode:
+`// diagram: IRider  ← Rider
+//          IDriver ← Driver
+//          IAdmin  ← Admin
+// (each class only sees the methods it needs)
+
+interface IRider {
+    void requestRide();
+    void cancelRide();
+}
+
+interface IDriver {
+    void acceptRide();
+    void startTrip();
+    void completeTrip();
+}
+
+interface IAdmin {
+    void banUser(String userId);
+    void viewReports();
+}
+
+// Rider is clean — no dead code ✓
+class Rider implements IRider {
+    public void requestRide() { System.out.println("Ride requested"); }
+    public void cancelRide()  { System.out.println("Ride cancelled"); }
+}
+
+// Driver is clean ✓
+class Driver implements IDriver {
+    public void acceptRide()   { System.out.println("Ride accepted"); }
+    public void startTrip()    { System.out.println("Trip started"); }
+    public void completeTrip() { System.out.println("Trip completed"); }
+}
+
+// Admin is clean ✓
+class Admin implements IAdmin {
+    public void banUser(String userId) {
+        System.out.println("User " + userId + " banned");
+    }
+    public void viewReports() { System.out.println("Showing reports"); }
+}`
       },
       {
         tag:'BookMyShow',
-        badText:'IBookingService mixes customer and admin methods. Customer impl has to stub out manageTheater() and generateReports().',
-        badCode:'interface IBookingService {\n  List<Show> searchShows(String city); // customer\n  void bookSeats(List<Seat> seats);    // customer\n  void manageTheater(Theater t);       // admin only ❌\n  void generateReports();              // admin only ❌\n}',
-        goodText:'Three small interfaces. CustomerService only sees user-facing methods. AdminService only sees admin methods.',
-        goodCode:'interface ISearchService  { List<Show> searchShows(String city); }\ninterface IBookingService { void bookSeats(List<Seat> s); }\ninterface IAdminService   { void manageTheater(Theater t); }\n\nclass CustomerService implements ISearchService, IBookingService { ... }'
+        badText:'IBookingService mixes customer and admin methods. CustomerService has to stub out manageTheater() and generateReports().',
+        badCode:
+`class Show    { String title; Show(String t)    { title = t; } }
+class Seat    { String id;    Seat(String id)   { this.id = id; } }
+class Theater { String name;  Theater(String n) { name = n; } }
+
+// One fat interface with mixed responsibilities ❌
+interface IBookingService {
+    List<Show> searchShows(String city);  // customer
+    void bookSeats(List<Seat> seats);     // customer
+    void manageTheater(Theater t);        // admin only ← customers fake this
+    void generateReports();               // admin only ← customers fake this
+}
+
+class CustomerService implements IBookingService {
+    public List<Show> searchShows(String city) {
+        return List.of(new Show("Avengers"));
+    }
+    public void bookSeats(List<Seat> seats) {
+        System.out.println("Booked " + seats.size() + " seats");
+    }
+    public void manageTheater(Theater t) { } // empty stub ❌
+    public void generateReports()        { } // empty stub ❌
+}`,
+        goodText:'Three small interfaces. CustomerService only sees customer-facing methods. AdminService only sees admin methods. No stubs anywhere.',
+        goodCode:
+`// diagram: ISearchService   ← CustomerService
+//          IBookingService  ← CustomerService
+//          IAdminService    ← AdminService
+// (CustomerService never sees admin methods)
+
+class Show    { String title; Show(String t)    { title = t; } }
+class Seat    { String id;    Seat(String id)   { this.id = id; } }
+class Theater { String name;  Theater(String n) { name = n; } }
+
+interface ISearchService  { List<Show> searchShows(String city); }
+interface IBookingService { void bookSeats(List<Seat> seats); }
+interface IAdminService   {
+    void manageTheater(Theater t);
+    void generateReports();
+}
+
+// Customer only sees customer methods — no admin methods visible ✓
+class CustomerService implements ISearchService, IBookingService {
+    public List<Show> searchShows(String city) {
+        return List.of(new Show("Avengers"), new Show("RRR"));
+    }
+    public void bookSeats(List<Seat> seats) {
+        System.out.println("Booked: " + seats.stream().map(s -> s.id).toList());
+    }
+}
+
+// Admin only sees admin methods ✓
+class AdminService implements IAdminService {
+    public void manageTheater(Theater t) {
+        System.out.println("Managing: " + t.name);
+    }
+    public void generateReports() {
+        System.out.println("Generating reports...");
+    }
+}`
       },
       {
         tag:'Vending Machine',
-        badText:'IVendingMachine exposes restock() and runDiagnostics() to customer code that should never see them.',
-        badCode:'interface IVendingMachine {\n  void selectItem(String code);  // customer\n  void insertCoin(double amt);   // customer\n  void restock(String c, int q); // admin only ❌\n  void runDiagnostics();         // admin only ❌\n}',
-        goodText:'CustomerPanel only implements ICustomerActions. Customers can never accidentally call restock().',
-        goodCode:'interface ICustomerActions { void selectItem(String c); void insertCoin(double a); }\ninterface IAdminActions    { void restock(String c, int q); void runDiagnostics(); }\n\nclass CustomerPanel implements ICustomerActions { ... } // clean ✓\nclass AdminPanel    implements IAdminActions    { ... }'
+        badText:'IVendingMachine exposes restock() and runDiagnostics() to customer code — customers should never see admin operations.',
+        badCode:
+`// One fat interface — customer and admin mixed ❌
+interface IVendingMachine {
+    void selectItem(String code);          // customer
+    void insertCoin(double amount);        // customer
+    void cancelTransaction();              // customer
+    void restock(String code, int qty);    // admin only ← customers fake this
+    void runDiagnostics();                 // admin only ← customers fake this
+    void setPrice(String code, double p);  // admin only ← customers fake this
+}
+
+class CustomerPanel implements IVendingMachine {
+    public void selectItem(String code)   { System.out.println("Selected: " + code); }
+    public void insertCoin(double amount) { System.out.println("Coins: " + amount); }
+    public void cancelTransaction()       { System.out.println("Cancelled"); }
+    public void restock(String c, int q)    { } // empty stub ❌
+    public void runDiagnostics()            { } // empty stub ❌
+    public void setPrice(String c, double p){ } // empty stub ❌
+}`,
+        goodText:'CustomerPanel only implements ICustomerActions — customers literally cannot call restock() or runDiagnostics(). AdminPanel only implements IAdminActions.',
+        goodCode:
+`// diagram: ICustomerActions ← CustomerPanel
+//          IAdminActions    ← AdminPanel
+// (no cross-contamination — customer can't even see admin methods)
+
+interface ICustomerActions {
+    void selectItem(String code);
+    void insertCoin(double amount);
+    void cancelTransaction();
+}
+
+interface IAdminActions {
+    void restock(String code, int qty);
+    void runDiagnostics();
+    void setPrice(String code, double price);
+}
+
+// Customer panel — no admin methods visible at all ✓
+class CustomerPanel implements ICustomerActions {
+    private double balance = 0;
+
+    public void selectItem(String code) {
+        System.out.println("Selected: " + code);
+    }
+    public void insertCoin(double amount) {
+        balance += amount;
+        System.out.println("Balance: Rs." + balance);
+    }
+    public void cancelTransaction() {
+        System.out.println("Refund: Rs." + balance);
+        balance = 0;
+    }
+}
+
+// Admin panel — no customer methods visible ✓
+class AdminPanel implements IAdminActions {
+    public void restock(String code, int qty) {
+        System.out.println("Restocked " + qty + " of " + code);
+    }
+    public void runDiagnostics() {
+        System.out.println("All systems OK");
+    }
+    public void setPrice(String code, double price) {
+        System.out.println(code + " price set to Rs." + price);
+    }
+}`
       },
     ]
   },
@@ -433,7 +1268,7 @@ const solidData = [
           </div>
           <div class="spc-darrow">↓ directly creates</div>
           <div class="spc-dbox spc-dbox-gray" style="margin-top:5px"><strong>CashPayment</strong></div>
-          <div class="spc-dnote spc-dnote-red">Can\'t use UPI. Can\'t test without real cash logic.</div>
+          <div class="spc-dnote spc-dnote-red">Can never use UPI. Can't test without real cash logic.</div>
         </div>
         <div class="spc-diag-side">
           <div class="spc-diag-lbl spc-dlbl-good">✓ Good — depends on an interface</div>
@@ -453,28 +1288,226 @@ const solidData = [
     examples:[
       {
         tag:'Parking Lot',
-        badText:'ParkingLot hard-codes CashPayment. It can never accept UPI without editing business logic.',
-        badCode:'class ParkingLot {\n  // hard-wired — can never swap ❌\n  private CashPayment pay = new CashPayment();\n\n  void checkout(Ticket t) {\n    pay.process(t.getFee());\n  }\n}',
-        goodText:'ParkingLot receives IPayment via constructor. Pass Cash, UPI, or Card — business logic never changes.',
-        goodCode:'class ParkingLot {\n  private final IPayment pay; // interface ✓\n\n  ParkingLot(IPayment pay) {  // injected from outside\n    this.pay = pay;\n  }\n  void checkout(Ticket t) {\n    pay.process(t.getFee());\n  }\n}'
+        badText:'ParkingLot hard-codes CashPayment with new. It can never accept UPI without editing business logic.',
+        badCode:
+`class CashPayment {
+    public void process(double amount) {
+        System.out.println("Cash collected: Rs." + amount);
+    }
+}
+
+// Hard-wired to CashPayment — can't swap ❌
+class ParkingLot {
+    private CashPayment payment = new CashPayment(); // locked ❌
+
+    public void checkout(String plate, double fee) {
+        System.out.println("Checking out: " + plate);
+        payment.process(fee); // can never use UPI or Card here
+    }
+}`,
+        goodText:'ParkingLot receives IPayment via constructor. Pass Cash, UPI, or Card — business logic never changes. Swap for a MockPayment in tests.',
+        goodCode:
+`// diagram: ParkingLot → IPayment (interface)
+//                           ↑ CashPayment
+//                           ↑ UPIPayment
+//                           ↑ CardPayment
+//                           ↑ MockPayment  (for tests)
+
+interface IPayment {
+    void process(double amount);
+}
+
+class CashPayment implements IPayment {
+    public void process(double amount) {
+        System.out.println("Cash collected: Rs." + amount);
+    }
+}
+
+class UPIPayment implements IPayment {
+    private String upiId;
+    UPIPayment(String upiId) { this.upiId = upiId; }
+    public void process(double amount) {
+        System.out.println("UPI " + upiId + " charged: Rs." + amount);
+    }
+}
+
+class CardPayment implements IPayment {
+    public void process(double amount) {
+        System.out.println("Card charged: Rs." + amount);
+    }
+}
+
+// ParkingLot depends only on IPayment — never on a concrete class ✓
+class ParkingLot {
+    private final IPayment payment;
+
+    ParkingLot(IPayment payment) { // injected from outside
+        this.payment = payment;
+    }
+
+    public void checkout(String plate, double fee) {
+        System.out.println("Checking out: " + plate);
+        payment.process(fee); // works with ANY implementation ✓
+    }
+}
+
+// In production:
+ParkingLot lot = new ParkingLot(new UPIPayment("abc@upi"));
+lot.checkout("KA01AB1234", 60.0);`
       },
       {
         tag:'Uber',
         badText:'TripService creates GoogleMapsTracker directly. Switching to MapBox or writing a unit test requires editing TripService.',
-        badCode:'class TripService {\n  // locked to Google Maps ❌\n  private GoogleMapsTracker tracker = new GoogleMapsTracker();\n\n  Location getLocation(Driver d) {\n    return tracker.getLocation(d.getId());\n  }\n}',
-        goodText:'TripService receives ILocationTracker via constructor. Inject Google in prod, MockTracker in tests.',
-        goodCode:'class TripService {\n  private final ILocationTracker tracker; // interface ✓\n\n  TripService(ILocationTracker tracker) { // injected\n    this.tracker = tracker;\n  }\n  Location getLocation(Driver d) {\n    return tracker.getLocation(d.getId());\n  }\n}'
+        badCode:
+`class GoogleMapsTracker {
+    public String getLocation(String driverId) {
+        return "lat:12.97,lng:77.59"; // calls real Google Maps API
+    }
+}
+
+// Locked to Google Maps — can't swap or test ❌
+class TripService {
+    private GoogleMapsTracker tracker = new GoogleMapsTracker(); // locked ❌
+
+    public String getDriverLocation(String driverId) {
+        return tracker.getLocation(driverId);
+    }
+}`,
+        goodText:'TripService receives ILocationTracker via constructor. Inject Google in prod, MapBox for another region, MockTracker in tests — TripService never changes.',
+        goodCode:
+`// diagram: TripService → ILocationTracker (interface)
+//                             ↑ GoogleMapsTracker   (production)
+//                             ↑ MapBoxTracker        (alternative)
+//                             ↑ MockLocationTracker  (tests)
+
+interface ILocationTracker {
+    String getLocation(String driverId);
+}
+
+class GoogleMapsTracker implements ILocationTracker {
+    public String getLocation(String driverId) {
+        return "lat:12.97,lng:77.59"; // Google Maps API
+    }
+}
+
+class MapBoxTracker implements ILocationTracker {
+    public String getLocation(String driverId) {
+        return "lat:12.97,lng:77.59"; // MapBox API
+    }
+}
+
+// No external API needed — perfect for unit tests ✓
+class MockLocationTracker implements ILocationTracker {
+    public String getLocation(String driverId) {
+        return "lat:0.0,lng:0.0"; // fixed test value
+    }
+}
+
+// TripService depends only on the interface ✓
+class TripService {
+    private final ILocationTracker tracker;
+
+    TripService(ILocationTracker tracker) { // injected
+        this.tracker = tracker;
+    }
+
+    public String getDriverLocation(String driverId) {
+        return tracker.getLocation(driverId);
+    }
+}
+
+// In production:
+TripService prod = new TripService(new GoogleMapsTracker());
+// In tests — no network call needed:
+TripService test = new TripService(new MockLocationTracker());`
       },
       {
         tag:'BookMyShow',
         badText:'BookingService creates MySQLRepo directly. Can\'t switch to MongoDB or run tests without a real database.',
-        badCode:'class BookingService {\n  // hard-wired to MySQL ❌\n  private MySQLBookingRepo repo = new MySQLBookingRepo();\n\n  void confirm(Booking b) { repo.save(b); }\n}',
-        goodText:'BookingService receives IBookingRepository via constructor. Inject MySQL in prod, InMemory in tests.',
-        goodCode:'class BookingService {\n  private final IBookingRepository repo; // interface ✓\n\n  BookingService(IBookingRepository repo) { // injected\n    this.repo = repo;\n  }\n  void confirm(Booking b) { repo.save(b); }\n}'
+        badCode:
+`class Booking {
+    String id, userId, showId;
+    Booking(String u, String s) {
+        id = UUID.randomUUID().toString(); userId = u; showId = s;
+    }
+}
+
+class MySQLBookingRepo {
+    public void save(Booking b) {
+        System.out.println("MySQL INSERT booking: " + b.id);
+    }
+    public Booking findById(String id) {
+        return null; // DB query
+    }
+}
+
+// Hard-wired to MySQL — can't swap DB or test ❌
+class BookingService {
+    private MySQLBookingRepo repo = new MySQLBookingRepo(); // locked ❌
+
+    public void confirm(Booking b) {
+        repo.save(b);
+        System.out.println("Booking confirmed: " + b.id);
+    }
+}`,
+        goodText:'BookingService receives IBookingRepository via constructor. MySQL in prod, InMemory in tests — BookingService never changes.',
+        goodCode:
+`// diagram: BookingService → IBookingRepository (interface)
+//                               ↑ MySQLBookingRepo    (production)
+//                               ↑ InMemoryBookingRepo  (tests)
+
+class Booking {
+    String id, userId, showId;
+    Booking(String u, String s) {
+        id = UUID.randomUUID().toString(); userId = u; showId = s;
+    }
+}
+
+interface IBookingRepository {
+    void save(Booking b);
+    Booking findById(String id);
+}
+
+class MySQLBookingRepo implements IBookingRepository {
+    public void save(Booking b) {
+        System.out.println("MySQL INSERT: " + b.id);
+    }
+    public Booking findById(String id) {
+        return null; // real DB query
+    }
+}
+
+// For unit tests — no database needed ✓
+class InMemoryBookingRepo implements IBookingRepository {
+    private Map<String, Booking> store = new HashMap<>();
+    public void save(Booking b)        { store.put(b.id, b); }
+    public Booking findById(String id) { return store.get(id); }
+}
+
+// BookingService depends only on the interface ✓
+class BookingService {
+    private final IBookingRepository repo;
+
+    BookingService(IBookingRepository repo) { // injected
+        this.repo = repo;
+    }
+
+    public void confirm(Booking b) {
+        repo.save(b);
+        System.out.println("Booking confirmed: " + b.id);
+    }
+}
+
+// In production:
+BookingService prod = new BookingService(new MySQLBookingRepo());
+// In tests — no real DB:
+BookingService test = new BookingService(new InMemoryBookingRepo());
+test.confirm(new Booking("user1", "show1"));`
       },
     ]
   }
 ];
+
 
 // ── PROBLEMS DATA ──
 const problems = [
